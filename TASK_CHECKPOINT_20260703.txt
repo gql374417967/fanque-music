@@ -1,0 +1,4 @@
+2026-07-03 current task checkpoint
+- Changed public/index.html genre/mood controls from input+datalist to select + custom input + hidden form field.
+- Changed public/app.js to sync select/custom values into hidden fields, cancel auto-advance on manual step click, and schedule a 5 second auto step advance when run.status is waiting and a next step is runnable.
+- Still need validation: node syntax check, browser check, and Tomato upload DOM exploration after clicking add song.

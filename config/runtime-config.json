@@ -1,0 +1,14 @@
+{
+  "deepseekBaseUrl": "http://127.0.0.1:9090/v1",
+  "deepseekModel": "auto",
+  "minimaxBaseUrl": "https://api.minimaxi.com/v1",
+  "minimaxMusicModel": "music-2.6-free",
+  "minimaxGroupId": "",
+  "agnesBaseUrl": "https://bmapi.020212.xyz/v1",
+  "agnesImageModel": "gpt-image-2",
+  "tomatoPublishUrl": "https://www.novelfm.com/creator/music/finished/ugc/uploadProduct",
+  "tomatoAccessToken": "",
+  "deepseekApiKey": "sk-api-nNWnBBgM4XqPVM-w4FPTs98PdhRVVyfSfZjOU4PvIA_cotjo6-XHgdr3Hs4dzChvF-dYSp_5hjoHIRBXVnUt18hy_bM7PwYHgv5uwt8FY6x14AuYDw5Zm54",
+  "minimaxApiKey": "sk-api-nNWnBBgM4XqPVM-w4FPTs98PdhRVVyfSfZjOU4PvIA_cotjo6-XHgdr3Hs4dzChvF-dYSp_5hjoHIRBXVnUt18hy_bM7PwYHgv5uwt8FY6x14AuYDw5Zm54",
+  "agnesApiKey": "sk-1fa6494f888f018f9e720b9fd1f5d43a72d4459b3537ffabd4483cea8cb2f3e5"
+}

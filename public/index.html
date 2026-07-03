@@ -1,0 +1,132 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>番茄音乐生成上架工作台</title>
+    <link rel="stylesheet" href="/styles.css" />
+  </head>
+  <body>
+    <main class="shell">
+      <header class="topbar">
+        <div>
+          <p class="eyebrow">Tomato Music Workflow</p>
+          <h1>番茄音乐生成上架工作台</h1>
+        </div>
+        <div class="topActions">
+          <button type="button" class="secondary" id="configToggle">打开配置</button>
+          <div class="statusPill" id="health">本地服务检测中</div>
+        </div>
+      </header>
+
+      <section class="configPanel panel hidden" id="configBody">
+        <div class="panelHead">
+          <div>
+            <h2>接口配置</h2>
+            <p id="configStatus">读取配置中</p>
+          </div>
+          <div class="actionRow">
+            <label class="inlineCheck"><input type="checkbox" id="diagnoseCurrentOnly" checked />仅测当前模型</label>
+            <button type="button" class="secondary" id="diagnoseBtn">诊断</button>
+            <button type="submit" form="configForm" id="saveConfigBtn">保存配置</button>
+          </div>
+        </div>
+        <form class="configGrid" id="configForm">
+          <label>DeepSeek Key<input name="deepseekApiKey" type="password" placeholder="留空则保持当前密钥" autocomplete="off" /></label>
+          <label>DeepSeek URL<input name="deepseekBaseUrl" /></label>
+          <label>DeepSeek 模型<input name="deepseekModel" /></label>
+          <label>MiniMax Key<input name="minimaxApiKey" type="password" placeholder="留空则保持当前密钥" autocomplete="off" /></label>
+          <label>MiniMax URL<input name="minimaxBaseUrl" /></label>
+          <label>MiniMax 音乐模型<input name="minimaxMusicModel" /></label>
+          <label>MiniMax Group ID<input name="minimaxGroupId" /></label>
+          <label>Agnes Key<input name="agnesApiKey" type="password" placeholder="留空则保持当前密钥" autocomplete="off" /></label>
+          <label>Agnes URL<input name="agnesBaseUrl" /></label>
+          <label>Agnes 图像模型<input name="agnesImageModel" /></label>
+          <label>番茄发布 URL<input name="tomatoPublishUrl" /></label>
+          <label>番茄 Token<input name="tomatoAccessToken" type="password" placeholder="留空则保持当前密钥" autocomplete="off" /></label>
+        </form>
+      </section>
+
+      <section class="workspace">
+        <form class="panel formPanel" id="workflowForm">
+          <div class="panelHead compactHead">
+            <div>
+              <h2>作品信息</h2>
+              <p>创建任务后逐步生成，满意再继续</p>
+            </div>
+            <button type="submit" id="submitBtn">创建任务</button>
+          </div>
+
+          <label>歌名<input name="title" placeholder="留空自动生成" /></label>
+          <label>艺人<input name="artist" value="AI Studio" required /></label>
+          <label>主题<textarea name="theme" rows="4" placeholder="留空自动生成：会根据歌名、曲风、情绪生成歌词和封面主题"></textarea></label>
+
+          <div class="grid2">
+            <label>曲风
+              <select data-choice-for="genre">
+                <option value="华语流行 / City Pop">华语流行 / City Pop</option>
+                <option value="华语流行">华语流行</option>
+                <option value="国风流行">国风流行</option>
+                <option value="民谣">民谣</option>
+                <option value="摇滚">摇滚</option>
+                <option value="R&B">R&B</option>
+                <option value="电子流行">电子流行</option>
+                <option value="City Pop">City Pop</option>
+                <option value="抒情流行">抒情流行</option>
+                <option value="说唱">说唱</option>
+                <option value="影视原声">影视原声</option>
+                <option value="__custom__">手写自定义...</option>
+              </select>
+              <input class="customChoice hidden" data-custom-for="genre" placeholder="输入自定义曲风" />
+              <input type="hidden" name="genre" value="华语流行 / City Pop" required />
+            </label>
+            <label>情绪
+              <select data-choice-for="mood">
+                <option value="温柔、坚定、有电影感">温柔、坚定、有电影感</option>
+                <option value="温柔、坚定">温柔、坚定</option>
+                <option value="治愈、安静">治愈、安静</option>
+                <option value="浪漫、甜蜜">浪漫、甜蜜</option>
+                <option value="热血、昂扬">热血、昂扬</option>
+                <option value="孤独、克制">孤独、克制</option>
+                <option value="怀旧、释然">怀旧、释然</option>
+                <option value="明亮、轻快">明亮、轻快</option>
+                <option value="忧伤、有故事感">忧伤、有故事感</option>
+                <option value="大气、有电影感">大气、有电影感</option>
+                <option value="自由、松弛">自由、松弛</option>
+                <option value="__custom__">手写自定义...</option>
+              </select>
+              <input class="customChoice hidden" data-custom-for="mood" placeholder="输入自定义情绪" />
+              <input type="hidden" name="mood" value="温柔、坚定、有电影感" required />
+            </label>
+          </div>
+
+          <label>时长：<b id="durationValue">170</b> 秒<input type="range" name="duration" min="150" max="180" value="170" /></label>
+
+          <label>参考音频<input type="file" name="referenceAudio" accept="audio/*" /></label>
+
+          <div class="modeGroup" role="group" aria-label="发布模式">
+            <label><input type="radio" name="publishMode" value="package" checked />只生成发布包</label>
+            <label><input type="radio" name="publishMode" value="publish" />自动上传番茄</label>
+            <label><input type="radio" name="publishMode" value="draft" />草稿模式</label>
+          </div>
+        </form>
+
+        <section class="panel resultPanel hidden" id="resultPanel">
+          <div class="panelHead compactHead">
+            <div>
+              <h2 id="runTitle">还没有创建任务</h2>
+              <p id="runMeta">填写作品信息后，先创建任务</p>
+            </div>
+            <a class="download hidden" id="packageLink" href="#" download>下载发布包</a>
+          </div>
+
+          <div class="steps" id="steps"></div>
+          <div class="error hidden" id="errorBox"></div>
+          <div class="resultGrid" id="resultGrid"></div>
+          <pre class="lyrics hidden" id="lyricsBox"></pre>
+        </section>
+      </section>
+    </main>
+    <script src="/app.js" type="module"></script>
+  </body>
+</html>
