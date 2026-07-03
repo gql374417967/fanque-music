@@ -16,7 +16,15 @@ const lyricsBox = document.querySelector('#lyricsBox');
 const packageLink = document.querySelector('#packageLink');
 const resultPanel = document.querySelector('#resultPanel');
 const configStatus = document.querySelector('#configStatus');
+const profileSelect = document.querySelector('#profileSelect');
+const newProfileBtn = document.querySelector('#newProfileBtn');
+const deleteProfileBtn = document.querySelector('#deleteProfileBtn');
+const newProfileBox = document.querySelector('#newProfileBox');
+const newProfileName = document.querySelector('#newProfileName');
+const confirmNewProfileBtn = document.querySelector('#confirmNewProfileBtn');
+const cancelNewProfileBtn = document.querySelector('#cancelNewProfileBtn');
 const durationInput = document.querySelector('#duration');
+
 const durationValue = document.querySelector('#durationValue');
 
 
@@ -30,12 +38,30 @@ const stepNames = {
 };
 
 let currentRun = null;
+let currentProfileName = 'default';
+let profileCache = [];
 let pollTimer = null;
 let autoAdvanceTimer = null;
 let autoAdvanceStepId = null;
 
+
+function showError(message) {
+  if (!errorBox) return;
+  errorBox.textContent = message || '';
+  setHidden(errorBox, !message);
+}
+
 function setHidden(el, hidden) {
+  if (!el) return;
   el.classList.toggle('hidden', hidden);
+}
+
+function bindConfigToggle() {
+  if (!configToggle || !configBody) return;
+  configToggle.addEventListener('click', () => {
+    const hidden = configBody.classList.toggle('hidden');
+    configToggle.textContent = hidden ? '展开接口配置' : '收起接口配置';
+  });
 }
 
 function clearAutoAdvance() {
@@ -80,9 +106,51 @@ function initChoiceInputs() {
   }
 }
 
-function showError(message) {
-  errorBox.textContent = message || '';
-  setHidden(errorBox, !message);
+function isMaskedSecret(value) {
+  return /^.{2,6}\.\.\..{2,6}$/.test(String(value || '').trim());
+}
+
+function applyProfile(profile) {
+  if (!profile) return;
+  currentProfileName = profile.name || 'default';
+  configForm.elements.profileName.value = currentProfileName;
+  for (const [key, value] of Object.entries(profile)) {
+    const input = configForm.elements.namedItem(key);
+    if (input && key !== 'name') input.value = value || '';
+  }
+  for (const input of configForm.querySelectorAll('[data-secret="true"]')) {
+    const maskedValue = profile[`${input.name}Masked`];
+    input.value = maskedValue || '';
+  }
+  configStatus.textContent = `当前配置：${currentProfileName}`;
+}
+
+function renderProfileSelect(state) {
+  if (!profileSelect) return;
+  profileCache = state?.profiles || [];
+  const active = state?.activeProfile || profileCache[0]?.name || 'default';
+  profileSelect.innerHTML = '';
+  for (const profile of profileCache) {
+    const option = document.createElement('option');
+    option.value = profile.name;
+    option.textContent = profile.name;
+    if (profile.name === active) option.selected = true;
+    profileSelect.append(option);
+  }
+  if (!profileCache.length) {
+    const option = document.createElement('option');
+    option.value = 'default';
+    option.textContent = 'default';
+    profileSelect.append(option);
+  }
+  currentProfileName = profileSelect.value || active;
+  if (deleteProfileBtn) deleteProfileBtn.disabled = currentProfileName === 'default';
+}
+
+async function loadProfiles() {
+  const state = await requestJson('/api/config/profiles');
+  renderProfileSelect(state);
+  applyProfile(profileCache.find((profile) => profile.name === currentProfileName) || profileCache[0]);
 }
 
 function statusText(status) {
@@ -135,8 +203,9 @@ function buildConfigPayload() {
   const payload = {};
   for (const element of configForm.elements) {
     if (!element.name) continue;
-    if (element.type === 'password' && !element.value.trim()) continue;
-    payload[element.name] = element.value.trim();
+    const value = element.value.trim();
+    if (element.dataset.secret === 'true' && (!value || isMaskedSecret(value))) continue;
+    payload[element.name] = value;
   }
   return payload;
 }
@@ -339,18 +408,61 @@ async function checkHealth() {
 }
 
 async function loadConfig() {
-  const data = await requestJson('/api/config');
-  for (const [key, value] of Object.entries(data)) {
-    const input = configForm.elements.namedItem(key);
-    if (input && input.type !== 'password') input.value = value || '';
-  }
-  configStatus.textContent = '接口配置已读取';
+  await loadProfiles();
+  const data = await requestJson(`/api/config?profile=${encodeURIComponent(currentProfileName)}`);
+  applyProfile(data);
 }
 
-configToggle.addEventListener('click', () => {
-  const hidden = configBody.classList.toggle('hidden');
-  configToggle.textContent = hidden ? '打开配置' : '收起配置';
+
+profileSelect?.addEventListener('change', async () => {
+  currentProfileName = profileSelect.value;
+  await loadConfig().catch((error) => {
+    if (configStatus) configStatus.textContent = error.message;
+  });
 });
+
+newProfileBtn?.addEventListener('click', () => {
+  if (!newProfileBox || !newProfileName) return;
+  setHidden(newProfileBox, false);
+  newProfileName.value = '';
+  newProfileName.focus();
+});
+
+confirmNewProfileBtn?.addEventListener('click', async () => {
+  const name = newProfileName?.value.trim();
+  if (!name) return;
+  try {
+    await requestJson('/api/config/profiles', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ name })
+    });
+    currentProfileName = name;
+    setHidden(newProfileBox, true);
+    await loadConfig();
+  } catch (error) {
+    if (configStatus) configStatus.textContent = error.message;
+  }
+});
+
+cancelNewProfileBtn?.addEventListener('click', () => {
+  if (!newProfileBox || !newProfileName) return;
+  newProfileName.value = '';
+  setHidden(newProfileBox, true);
+});
+deleteProfileBtn?.addEventListener('click', async () => {
+  if (!currentProfileName || currentProfileName === 'default') return;
+  if (!confirm(`删除配置 ${currentProfileName}？`)) return;
+  try {
+    await requestJson(`/api/config/profiles/${encodeURIComponent(currentProfileName)}`, { method: 'DELETE' });
+    currentProfileName = 'default';
+    await loadConfig();
+  } catch (error) {
+    if (configStatus) configStatus.textContent = error.message;
+  }
+});
+
+
 
 configForm.addEventListener('submit', async (event) => {
   event.preventDefault();
@@ -362,16 +474,13 @@ configForm.addEventListener('submit', async (event) => {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(buildConfigPayload())
     });
-    for (const [key, value] of Object.entries(data)) {
-      const input = configForm.elements.namedItem(key);
-      if (input && input.type !== 'password') input.value = value || '';
-    }
+    applyProfile(data);
     configStatus.textContent = '保存成功';
   } catch (error) {
     configStatus.textContent = error.message;
   } finally {
     saveConfigBtn.disabled = false;
-    saveConfigBtn.textContent = '保存配置';
+    saveConfigBtn.textContent = '保存';
   }
 });
 
@@ -383,8 +492,9 @@ diagnoseBtn.addEventListener('click', async () => {
     const data = await requestJson('/api/config/diagnose', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ currentOnly })
+      body: JSON.stringify({ currentOnly, profile: currentProfileName })
     });
+
     renderDiagnosisResult(data?.results);
   } catch (error) {
     configStatus.textContent = error.message;
@@ -406,6 +516,7 @@ form.addEventListener('submit', async (event) => {
   try {
     const run = await requestJson('/api/workflows', { method: 'POST', body: buildFormData() });
     renderRun(run);
+
     runMeta.textContent = '任务已创建。先生成歌词，满意后再点下一步。';
   } catch (error) {
     showError(error.message);
@@ -415,11 +526,12 @@ form.addEventListener('submit', async (event) => {
   }
 });
 
+bindConfigToggle();
 initChoiceInputs();
 syncDurationValue();
 durationInput?.addEventListener('input', syncDurationValue);
 checkHealth();
 loadConfig().catch((error) => {
-  configStatus.textContent = error.message;
+  if (configStatus) configStatus.textContent = error.message;
 });
 renderRun(null);

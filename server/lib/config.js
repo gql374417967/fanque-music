@@ -19,35 +19,78 @@ const defaults = {
 };
 
 const secretFields = new Set(['deepseekApiKey', 'minimaxApiKey', 'agnesApiKey', 'tomatoAccessToken']);
+const providerFields = {
+  deepseek: ['deepseekApiKey', 'deepseekBaseUrl', 'deepseekModel'],
+  minimax: ['minimaxApiKey', 'minimaxBaseUrl', 'minimaxMusicModel', 'minimaxGroupId'],
+  agnes: ['agnesApiKey', 'agnesBaseUrl', 'agnesImageModel'],
+  tomato: ['tomatoPublishUrl', 'tomatoAccessToken']
+};
 
-function fromEnv() {
-  return {
-    deepseekApiKey: process.env.DEEPSEEK_API_KEY || '',
-    deepseekBaseUrl: process.env.DEEPSEEK_BASE_URL || defaults.deepseekBaseUrl,
-    deepseekModel: process.env.DEEPSEEK_MODEL || defaults.deepseekModel,
-    minimaxApiKey: process.env.MINIMAX_API_KEY || '',
-    minimaxBaseUrl: process.env.MINIMAX_BASE_URL || defaults.minimaxBaseUrl,
-    minimaxMusicModel: process.env.MINIMAX_MUSIC_MODEL || defaults.minimaxMusicModel,
-    minimaxGroupId: process.env.MINIMAX_GROUP_ID || '',
-    agnesApiKey: process.env.AGNES_API_KEY || '',
-    agnesBaseUrl: process.env.AGNES_BASE_URL || defaults.agnesBaseUrl,
-    agnesImageModel: process.env.AGNES_MODEL || defaults.agnesImageModel,
-    tomatoPublishUrl: process.env.TOMATO_PUBLISH_URL || '',
-    tomatoAccessToken: process.env.TOMATO_ACCESS_TOKEN || ''
+function emptyProfile(name, provider = 'custom') {
+  return { name, provider, ...defaults, deepseekApiKey: '', minimaxApiKey: '', agnesApiKey: '', tomatoAccessToken: '' };
+}
+
+function normalizeProfiles(raw) {
+  const base = {
+    version: 1,
+    activeProfile: 'default',
+    profiles: { default: emptyProfile('default') }
   };
+  if (!raw || typeof raw !== 'object') return base;
+  if (raw.profiles && typeof raw.profiles === 'object') {
+    const next = { ...base, ...raw, profiles: {} };
+    for (const [name, profile] of Object.entries(raw.profiles)) {
+      next.profiles[name] = { ...emptyProfile(name, profile?.provider || 'custom'), ...profile, name };
+    }
+    if (!next.profiles[next.activeProfile]) next.activeProfile = Object.keys(next.profiles)[0] || 'default';
+    return next;
+  }
+  const legacy = { ...emptyProfile('default'), ...raw, name: 'default' };
+  return { version: 1, activeProfile: 'default', profiles: { default: legacy } };
+}
+
+function pickProfile(configState, profileName) {
+  const profiles = configState.profiles || {};
+  const names = Object.keys(profiles);
+  const activeName = profileName && profiles[profileName] ? profileName : configState.activeProfile;
+  return profiles[activeName] || profiles[names[0]] || emptyProfile('default');
 }
 
 async function readSaved() {
   try {
-    return JSON.parse(await fs.readFile(configPath, 'utf8'));
+    return normalizeProfiles(JSON.parse(await fs.readFile(configPath, 'utf8')));
   } catch (error) {
-    if (error?.code === 'ENOENT') return {};
+    if (error?.code === 'ENOENT') return normalizeProfiles();
     throw error;
   }
 }
 
-export async function getRuntimeConfig() {
-  return { ...defaults, ...fromEnv(), ...(await readSaved()) };
+function mergeEnv(profile) {
+  return {
+    ...profile,
+    deepseekApiKey: profile.deepseekApiKey || process.env.DEEPSEEK_API_KEY || '',
+    deepseekBaseUrl: profile.deepseekBaseUrl || process.env.DEEPSEEK_BASE_URL || defaults.deepseekBaseUrl,
+    deepseekModel: profile.deepseekModel || process.env.DEEPSEEK_MODEL || defaults.deepseekModel,
+    minimaxApiKey: profile.minimaxApiKey || process.env.MINIMAX_API_KEY || '',
+    minimaxBaseUrl: profile.minimaxBaseUrl || process.env.MINIMAX_BASE_URL || defaults.minimaxBaseUrl,
+    minimaxMusicModel: profile.minimaxMusicModel || process.env.MINIMAX_MUSIC_MODEL || defaults.minimaxMusicModel,
+    minimaxGroupId: profile.minimaxGroupId || process.env.MINIMAX_GROUP_ID || '',
+    agnesApiKey: profile.agnesApiKey || process.env.AGNES_API_KEY || '',
+    agnesBaseUrl: profile.agnesBaseUrl || process.env.AGNES_BASE_URL || defaults.agnesBaseUrl,
+    agnesImageModel: profile.agnesImageModel || process.env.AGNES_MODEL || defaults.agnesImageModel,
+    tomatoPublishUrl: profile.tomatoPublishUrl || process.env.TOMATO_PUBLISH_URL || '',
+    tomatoAccessToken: profile.tomatoAccessToken || process.env.TOMATO_ACCESS_TOKEN || ''
+  };
+}
+
+export async function getRuntimeConfig(options = {}) {
+  const saved = await readSaved();
+  const profileName = options.profile || saved.activeProfile;
+  return mergeEnv(pickProfile(saved, profileName));
+}
+
+export async function getRuntimeConfigState() {
+  return readSaved();
 }
 
 export function maskSecret(value) {
@@ -68,20 +111,54 @@ export function publicConfig(config) {
 }
 
 export async function saveRuntimeConfig(input) {
-  const current = await getRuntimeConfig();
-  const next = { ...current };
+  const state = await readSaved();
+  const profileName = (input.profileName || state.activeProfile || 'default').trim() || 'default';
+  const current = { ...emptyProfile(profileName), ...(state.profiles[profileName] || {}) };
   for (const [key, value] of Object.entries(input)) {
+    if (key === 'profileName' || key === 'activeProfile') continue;
     if (!(key in current) && !secretFields.has(key)) continue;
     if (secretFields.has(key) && value === '') continue;
-    next[key] = typeof value === 'string' ? value.trim() : value;
+    current[key] = typeof value === 'string' ? value.trim() : value;
   }
+  current.name = profileName;
+  state.profiles[profileName] = current;
+  state.activeProfile = input.activeProfile || profileName;
   await fs.mkdir(configDir, { recursive: true });
-  await fs.writeFile(configPath, `${JSON.stringify(next, null, 2)}\n`, 'utf8');
-  return next;
+  await fs.writeFile(configPath, `${JSON.stringify(state, null, 2)}\n`, 'utf8');
+  return publicConfig(current);
+}
+
+export async function listRuntimeProfiles() {
+  const state = await readSaved();
+  return {
+    activeProfile: state.activeProfile,
+    profiles: Object.values(state.profiles).map((profile) => publicConfig(profile))
+  };
+}
+
+export async function createRuntimeProfile(name, template = {}) {
+  const state = await readSaved();
+  const profileName = String(name || '').trim();
+  if (!profileName) throw new Error('配置名称不能为空');
+  if (state.profiles[profileName]) throw new Error('配置名称已存在');
+  state.profiles[profileName] = { ...emptyProfile(profileName, template.provider || 'custom'), ...template, name: profileName };
+  state.activeProfile = profileName;
+  await fs.writeFile(configPath, `${JSON.stringify(state, null, 2)}\n`, 'utf8');
+  return state.profiles[profileName];
+}
+
+export async function deleteRuntimeProfile(name) {
+  const state = await readSaved();
+  if (name === 'default') throw new Error('默认配置不可删除');
+  delete state.profiles[name];
+  if (!Object.keys(state.profiles).length) state.profiles.default = emptyProfile('default');
+  if (state.activeProfile === name) state.activeProfile = Object.keys(state.profiles)[0];
+  await fs.writeFile(configPath, `${JSON.stringify(state, null, 2)}\n`, 'utf8');
+  return state;
 }
 
 export async function diagnoseRuntimeConfig(options = {}) {
-  const config = await getRuntimeConfig();
+  const config = await getRuntimeConfig({ profile: options.profile });
   const results = {};
   const currentOnly = options.currentOnly === true;
 
@@ -89,64 +166,18 @@ export async function diagnoseRuntimeConfig(options = {}) {
     try {
       const response = await fn();
       const body = typeof response.data === 'string' ? response.data : JSON.stringify(response.data);
-      results[name] = {
-        ok: response.status >= 200 && response.status < 400,
-        status: response.status,
-        message: body.slice(0, 500)
-      };
+      results[name] = { ok: response.status >= 200 && response.status < 400, status: response.status, message: body.slice(0, 500) };
     } catch (error) {
-      results[name] = {
-        ok: false,
-        status: error.response?.status || 0,
-        message: (error.response?.data ? JSON.stringify(error.response.data) : error.message).slice(0, 500)
-      };
+      results[name] = { ok: false, status: error.response?.status || 0, message: (error.response?.data ? JSON.stringify(error.response.data) : error.message).slice(0, 500) };
     }
   }
 
   if (currentOnly) {
-    await probe('selectedModel', () => axios.post(
-      `${config.deepseekBaseUrl}/chat/completions`,
-      {
-        model: config.deepseekModel,
-        messages: [
-          { role: 'system', content: '你只需要回复一个字：ok' },
-          { role: 'user', content: 'ping' }
-        ],
-        temperature: 0,
-        max_tokens: 5
-      },
-      {
-        headers: {
-          Authorization: `Bearer ${config.deepseekApiKey}`,
-          'Content-Type': 'application/json'
-        },
-        timeout: 30000,
-        validateStatus: () => true
-      }
-    ));
+    await probe('selectedModel', () => axios.post(`${config.deepseekBaseUrl}/chat/completions`, { model: config.deepseekModel, messages: [{ role: 'system', content: '你只需要回复一个字：ok' }, { role: 'user', content: 'ping' }], temperature: 0, max_tokens: 5 }, { headers: { Authorization: `Bearer ${config.deepseekApiKey}`, 'Content-Type': 'application/json' }, timeout: 30000, validateStatus: () => true }));
     return { config: publicConfig(config), results };
   }
 
-  await probe('deepseekChat', () => axios.post(
-...[Truncated]...
-  await probe('minimaxMusicModel', () => axios.post(`${config.minimaxBaseUrl}/music_generation`, {
-    model: config.minimaxMusicModel,
-    lyrics: '[Verse 1]\ntest',
-    title: 'test',
-    genre: 'pop',
-    mood: 'calm',
-    duration: 120
-  }, {
-    headers: {
-      Authorization: `Bearer ${config.minimaxApiKey}`,
-      'Content-Type': 'application/json',
-      ...(config.minimaxGroupId ? { 'Group-Id': config.minimaxGroupId } : {})
-    },
-    timeout: 30000,
-    validateStatus: () => true
-  }));
-
+  await probe('deepseekChat', () => axios.post(`${config.deepseekBaseUrl}/chat/completions`, { model: config.deepseekModel, messages: [{ role: 'system', content: '你只需要回复一个字：ok' }, { role: 'user', content: 'ping' }], temperature: 0, max_tokens: 5 }, { headers: { Authorization: `Bearer ${config.deepseekApiKey}`, 'Content-Type': 'application/json' }, timeout: 30000, validateStatus: () => true }));
+  await probe('minimaxMusicModel', () => axios.post(`${config.minimaxBaseUrl}/music_generation`, { model: config.minimaxMusicModel, lyrics: '[Verse 1]\ntest', title: 'test', genre: 'pop', mood: 'calm', duration: 120 }, { headers: { Authorization: `Bearer ${config.minimaxApiKey}`, 'Content-Type': 'application/json', ...(config.minimaxGroupId ? { 'Group-Id': config.minimaxGroupId } : {}) }, timeout: 30000, validateStatus: () => true }));
   return { config: publicConfig(config), results };
 }
-
-

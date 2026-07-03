@@ -5,7 +5,7 @@ import multer from 'multer';
 import path from 'node:path';
 import { z } from 'zod';
 import { ensureStorage, rootDir, uploadsDir } from './lib/paths.js';
-import { diagnoseRuntimeConfig, getRuntimeConfig, publicConfig, saveRuntimeConfig } from './lib/config.js';
+import { createRuntimeProfile, deleteRuntimeProfile, diagnoseRuntimeConfig, getRuntimeConfig, listRuntimeProfiles, publicConfig, saveRuntimeConfig } from './lib/config.js';
 import { createWorkflow, getRun, listRuns, runWorkflowStep, stopWorkflow } from './workflow.js';
 
 const app = express();
@@ -28,27 +28,50 @@ app.use('/assets', express.static(rootDir, { fallthrough: false }));
 app.use(express.static(path.join(rootDir, 'public')));
 
 app.get('/api/health', (_req, res) => res.json({ ok: true, service: 'tomato-music-workflow' }));
-app.get('/api/config', async (_req, res, next) => {
+app.get('/api/config', async (req, res, next) => {
   try {
-    res.json(publicConfig(await getRuntimeConfig()));
+    res.json(publicConfig(await getRuntimeConfig({ profile: req.query?.profile })));
+  } catch (error) {
+    next(error);
+  }
+});
+app.get('/api/config/profiles', async (_req, res, next) => {
+  try {
+    res.json(await listRuntimeProfiles());
+  } catch (error) {
+    next(error);
+  }
+});
+app.post('/api/config/profiles', async (req, res, next) => {
+  try {
+    const profile = await createRuntimeProfile(req.body?.name, req.body?.template || {});
+    res.status(201).json(publicConfig(profile));
+  } catch (error) {
+    next(error);
+  }
+});
+app.delete('/api/config/profiles/:name', async (req, res, next) => {
+  try {
+    res.json(await deleteRuntimeProfile(req.params.name));
   } catch (error) {
     next(error);
   }
 });
 app.post('/api/config', async (req, res, next) => {
   try {
-    res.json(publicConfig(await saveRuntimeConfig(req.body || {})));
+    res.json(await saveRuntimeConfig(req.body || {}));
   } catch (error) {
     next(error);
   }
 });
 app.post('/api/config/diagnose', async (req, res, next) => {
   try {
-    res.json(await diagnoseRuntimeConfig({ currentOnly: req.body?.currentOnly === true }));
+    res.json(await diagnoseRuntimeConfig({ currentOnly: req.body?.currentOnly === true, profile: req.body?.profile }));
   } catch (error) {
     next(error);
   }
 });
+
 app.get('/api/runs', (_req, res) => res.json(listRuns()));
 function sendRun(req, res) {
   const run = getRun(req.params.id);

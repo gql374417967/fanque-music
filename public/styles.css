@@ -1,3 +1,5 @@
+.hidden { display: none !important; }
+
 :root {
   font-family: Inter, "Microsoft YaHei", Arial, sans-serif;
   color: #17202b;
@@ -35,11 +37,20 @@ textarea { resize: vertical; min-height: 92px; }
 input[type="range"] { padding: 0; accent-color: #2474a6; }
 input[type="file"] { background: #fff; }
 
-button, .download { border: 0; border-radius: 8px; background: #206f9f; color: #fff; padding: 10px 14px; font-weight: 800; text-decoration: none; min-height: 42px; display: inline-flex; align-items: center; justify-content: center; gap: 6px; white-space: nowrap; }
+button, .download { border: 0; border-radius: 8px; background: #206f9f; color: #fff; padding: 10px 14px; font-weight: 800; text-decoration: none; min-height: 42px; display: inline-flex; align-items: center; justify-content: center; gap: 6px; white-space: nowrap; cursor: pointer; }
 button.secondary { background: #e7eef5; color: #20364a; }
 button.danger { background: #bd2f3a; }
 button.primary { background: #206f9f; }
+button:disabled { opacity: .62; cursor: not-allowed; }
 .actionRow, .stepActions { display: flex; gap: 8px; flex-wrap: wrap; }
+.configActions { width: min(100%, 860px); display: grid; grid-template-columns: minmax(220px, 1fr) auto; gap: 10px; align-items: end; }
+.profilePicker { margin: 0; min-width: 220px; }
+.configButtons { display: flex; align-items: center; justify-content: flex-end; gap: 8px; flex-wrap: wrap; }
+.configButtons button { min-width: 68px; padding-inline: 13px; }
+.newProfileBox { grid-column: 1 / -1; display: grid; grid-template-columns: minmax(220px, 1fr) auto auto; gap: 8px; align-items: center; padding: 10px; border: 1px solid #d9e4ee; border-radius: 10px; background: #f8fbfd; }
+.newProfileBox input { min-height: 40px; }
+.newProfileBox button { min-height: 40px; }
+.configPanel .panelHead { align-items: flex-end; }
 
 .grid2, .configGrid, .resultGrid { display: grid; gap: 12px; }
 .grid2 { grid-template-columns: repeat(2, minmax(0, 1fr)); }
@@ -81,8 +92,11 @@ button.primary { background: #206f9f; }
 @media (max-width: 720px) {
   .shell { padding: 12px; }
   .topbar, .panelHead { align-items: stretch; flex-direction: column; }
-  .topActions, .actionRow, .stepActions { width: 100%; }
-  .topActions > *, .panelHead button, .download, .stepActions button { width: 100%; }
+  .topActions, .actionRow, .stepActions, .configActions, .configButtons { width: 100%; }
+  .configActions, .newProfileBox { grid-template-columns: 1fr; }
+  .configButtons { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .inlineCheck { grid-column: 1 / -1; justify-content: center; }
+  .topActions > *, .panelHead button, .download, .stepActions button, .configButtons button { width: 100%; }
   .grid2, .configGrid, .resultGrid, .modeGroup, .steps { grid-template-columns: 1fr; }
   .panel { padding: 13px; }
   .topbar h1 { font-size: 24px; }
