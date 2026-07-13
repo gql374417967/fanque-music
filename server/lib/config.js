@@ -143,6 +143,7 @@ export async function createRuntimeProfile(name, template = {}) {
   if (state.profiles[profileName]) throw new Error('配置名称已存在');
   state.profiles[profileName] = { ...emptyProfile(profileName, template.provider || 'custom'), ...template, name: profileName };
   state.activeProfile = profileName;
+  await fs.mkdir(configDir, { recursive: true });
   await fs.writeFile(configPath, `${JSON.stringify(state, null, 2)}\n`, 'utf8');
   return state.profiles[profileName];
 }
@@ -153,6 +154,7 @@ export async function deleteRuntimeProfile(name) {
   delete state.profiles[name];
   if (!Object.keys(state.profiles).length) state.profiles.default = emptyProfile('default');
   if (state.activeProfile === name) state.activeProfile = Object.keys(state.profiles)[0];
+  await fs.mkdir(configDir, { recursive: true });
   await fs.writeFile(configPath, `${JSON.stringify(state, null, 2)}\n`, 'utf8');
   return state;
 }
@@ -162,22 +164,29 @@ export async function diagnoseRuntimeConfig(options = {}) {
   const results = {};
   const currentOnly = options.currentOnly === true;
 
-  async function probe(name, fn) {
+  async function probe(name, metadata, fn) {
+    const context = { provider: metadata.provider, model: metadata.model, endpoint: metadata.endpoint, label: metadata.label };
     try {
       const response = await fn();
       const body = typeof response.data === 'string' ? response.data : JSON.stringify(response.data);
-      results[name] = { ok: response.status >= 200 && response.status < 400, status: response.status, message: body.slice(0, 500) };
+      results[name] = { ...context, ok: response.status >= 200 && response.status < 400, status: response.status, message: body.slice(0, 500) };
     } catch (error) {
-      results[name] = { ok: false, status: error.response?.status || 0, message: (error.response?.data ? JSON.stringify(error.response.data) : error.message).slice(0, 500) };
+      results[name] = { ...context, ok: false, status: error.response?.status || 0, message: (error.response?.data ? JSON.stringify(error.response.data) : error.message).slice(0, 500) };
     }
   }
 
+  const deepseekEndpoint = `${config.deepseekBaseUrl}/chat/completions`;
+  const minimaxEndpoint = `${config.minimaxBaseUrl}/music_generation`;
+  const agnesEndpoint = `${config.agnesBaseUrl}/images/generations`;
+  const deepseekRequest = () => axios.post(deepseekEndpoint, { model: config.deepseekModel, messages: [{ role: 'system', content: '你只需要回复一个字：ok' }, { role: 'user', content: 'ping' }], temperature: 0, max_tokens: 5 }, { headers: { Authorization: `Bearer ${config.deepseekApiKey}`, 'Content-Type': 'application/json' }, timeout: 30000, validateStatus: () => true });
+
   if (currentOnly) {
-    await probe('selectedModel', () => axios.post(`${config.deepseekBaseUrl}/chat/completions`, { model: config.deepseekModel, messages: [{ role: 'system', content: '你只需要回复一个字：ok' }, { role: 'user', content: 'ping' }], temperature: 0, max_tokens: 5 }, { headers: { Authorization: `Bearer ${config.deepseekApiKey}`, 'Content-Type': 'application/json' }, timeout: 30000, validateStatus: () => true }));
+    await probe('selectedModel', { provider: 'deepseek', model: config.deepseekModel, endpoint: deepseekEndpoint, label: '当前文本模型（DeepSeek）' }, deepseekRequest);
     return { config: publicConfig(config), results };
   }
 
-  await probe('deepseekChat', () => axios.post(`${config.deepseekBaseUrl}/chat/completions`, { model: config.deepseekModel, messages: [{ role: 'system', content: '你只需要回复一个字：ok' }, { role: 'user', content: 'ping' }], temperature: 0, max_tokens: 5 }, { headers: { Authorization: `Bearer ${config.deepseekApiKey}`, 'Content-Type': 'application/json' }, timeout: 30000, validateStatus: () => true }));
-  await probe('minimaxMusicModel', () => axios.post(`${config.minimaxBaseUrl}/music_generation`, { model: config.minimaxMusicModel, lyrics: '[Verse 1]\ntest', title: 'test', genre: 'pop', mood: 'calm', duration: 120 }, { headers: { Authorization: `Bearer ${config.minimaxApiKey}`, 'Content-Type': 'application/json', ...(config.minimaxGroupId ? { 'Group-Id': config.minimaxGroupId } : {}) }, timeout: 30000, validateStatus: () => true }));
+  await probe('deepseekChat', { provider: 'deepseek', model: config.deepseekModel, endpoint: deepseekEndpoint, label: '歌词文本模型（DeepSeek）' }, deepseekRequest);
+  await probe('minimaxMusicModel', { provider: 'minimax', model: config.minimaxMusicModel, endpoint: minimaxEndpoint, label: '音乐生成模型（MiniMax）' }, () => axios.post(minimaxEndpoint, { model: config.minimaxMusicModel, lyrics: '[Verse 1]\ntest', title: 'test', genre: 'pop', mood: 'calm', duration: 120 }, { headers: { Authorization: `Bearer ${config.minimaxApiKey}`, 'Content-Type': 'application/json', ...(config.minimaxGroupId ? { 'Group-Id': config.minimaxGroupId } : {}) }, timeout: 30000, validateStatus: () => true }));
+  await probe('agnesImageModel', { provider: 'agnes', model: config.agnesImageModel, endpoint: agnesEndpoint, label: '封面生成模型（Agnes）' }, () => axios.post(agnesEndpoint, { model: config.agnesImageModel, prompt: 'minimal red circle icon on white background', size: '1024x1024', n: 1 }, { headers: { Authorization: `Bearer ${config.agnesApiKey}`, 'Content-Type': 'application/json' }, timeout: 30000, validateStatus: () => true }));
   return { config: publicConfig(config), results };
 }

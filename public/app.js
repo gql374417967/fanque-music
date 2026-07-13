@@ -44,6 +44,7 @@ const stepNames = {
 let currentRun = null;
 let currentProfileName = 'default';
 let profileCache = [];
+let configLoadSequence = 0;
 let pollTimer = null;
 let autoAdvanceTimer = null;
 let autoAdvanceStepId = null;
@@ -129,16 +130,17 @@ function applyProfile(profile) {
   configStatus.textContent = `当前配置：${currentProfileName}`;
 }
 
-function renderProfileSelect(state) {
+function renderProfileSelect(state, preferredName = currentProfileName) {
   if (!profileSelect) return;
   profileCache = state?.profiles || [];
   const active = state?.activeProfile || profileCache[0]?.name || 'default';
+  const selectedName = profileCache.some((profile) => profile.name === preferredName) ? preferredName : active;
   profileSelect.innerHTML = '';
   for (const profile of profileCache) {
     const option = document.createElement('option');
     option.value = profile.name;
     option.textContent = profile.name;
-    if (profile.name === active) option.selected = true;
+    if (profile.name === selectedName) option.selected = true;
     profileSelect.append(option);
   }
   if (!profileCache.length) {
@@ -147,14 +149,18 @@ function renderProfileSelect(state) {
     option.textContent = 'default';
     profileSelect.append(option);
   }
-  currentProfileName = profileSelect.value || active;
+  currentProfileName = profileSelect.value || selectedName;
   if (deleteProfileBtn) deleteProfileBtn.disabled = currentProfileName === 'default';
 }
 
-async function loadProfiles() {
+async function loadProfiles(preferredName = currentProfileName) {
   const state = await requestJson('/api/config/profiles');
-  renderProfileSelect(state);
+  renderProfileSelect(state, preferredName);
   applyProfile(profileCache.find((profile) => profile.name === currentProfileName) || profileCache[0]);
+}
+
+function syncDurationValue() {
+  if (durationInput && durationValue) durationValue.textContent = durationInput.value;
 }
 
 function statusText(status) {
@@ -171,6 +177,16 @@ function statusText(status) {
   })[status] || status;
 }
 
+function escapeHtml(value) {
+  return String(value ?? '').replace(/[&<>"']/g, (character) => ({
+    '&': '&amp;',
+    '<': '&lt;',
+    '>': '&gt;',
+    '"': '&quot;',
+    "'": '&#39;'
+  })[character]);
+}
+
 function renderDiagnosisResult(results) {
   const entries = Object.entries(results || {});
   if (!entries.length) {
@@ -183,8 +199,10 @@ function renderDiagnosisResult(results) {
     const status = item.ok ? '可用' : '不可用';
     const stateClass = item.ok ? 'ok' : 'bad';
     const code = item.status ? `HTTP ${item.status}` : '无状态码';
-    const message = item.message ? item.message.replace(/\s+/g, ' ').slice(0, 180) : '无摘要';
-    return `<div class="diagnoseCard ${stateClass}"><strong>${name}</strong><span>${status}</span><small>${code}</small><p>${message}</p></div>`;
+    const target = [item.provider, item.model].filter(Boolean).join(' / ') || '未标注模型';
+    const endpoint = item.endpoint || item.label || '未标注端点';
+    const message = item.message ? String(item.message).replace(/\s+/g, ' ').slice(0, 500) : '无错误摘要';
+    return `<div class="diagnoseCard ${stateClass}"><strong>${escapeHtml(name)}</strong><span>${escapeHtml(status)}</span><small>${escapeHtml(target)}</small><small>${escapeHtml(endpoint)}</small><p>${escapeHtml(code)} · ${escapeHtml(message)}</p></div>`;
   });
   configStatus.innerHTML = items.join('');
   configStatus.classList.add('diagnoseGrid');
@@ -462,16 +480,23 @@ async function checkHealth() {
   }
 }
 
-async function loadConfig() {
-  await loadProfiles();
-  const data = await requestJson(`/api/config?profile=${encodeURIComponent(currentProfileName)}`);
+async function loadConfig(preferredName = currentProfileName) {
+  const sequence = ++configLoadSequence;
+  const targetName = preferredName || currentProfileName || 'default';
+  currentProfileName = targetName;
+  await loadProfiles(targetName);
+  if (sequence !== configLoadSequence) return;
+  const loadedName = currentProfileName;
+  const data = await requestJson(`/api/config?profile=${encodeURIComponent(loadedName)}`);
+  if (sequence !== configLoadSequence || currentProfileName !== loadedName) return;
   applyProfile(data);
 }
 
 
 profileSelect?.addEventListener('change', async () => {
-  currentProfileName = profileSelect.value;
-  await loadConfig().catch((error) => {
+  const selectedName = profileSelect.value;
+  currentProfileName = selectedName;
+  await loadConfig(selectedName).catch((error) => {
     if (configStatus) configStatus.textContent = error.message;
   });
 });
@@ -485,7 +510,13 @@ newProfileBtn?.addEventListener('click', () => {
 
 confirmNewProfileBtn?.addEventListener('click', async () => {
   const name = newProfileName?.value.trim();
-  if (!name) return;
+  if (!name) {
+    if (configStatus) configStatus.textContent = '请输入配置名称';
+    newProfileName?.focus();
+    return;
+  }
+  confirmNewProfileBtn.disabled = true;
+  confirmNewProfileBtn.textContent = '创建中';
   try {
     await requestJson('/api/config/profiles', {
       method: 'POST',
@@ -495,8 +526,12 @@ confirmNewProfileBtn?.addEventListener('click', async () => {
     currentProfileName = name;
     setHidden(newProfileBox, true);
     await loadConfig();
+    if (configStatus) configStatus.textContent = `已创建配置：${name}`;
   } catch (error) {
     if (configStatus) configStatus.textContent = error.message;
+  } finally {
+    confirmNewProfileBtn.disabled = false;
+    confirmNewProfileBtn.textContent = '确认';
   }
 });
 
@@ -504,6 +539,7 @@ cancelNewProfileBtn?.addEventListener('click', () => {
   if (!newProfileBox || !newProfileName) return;
   newProfileName.value = '';
   setHidden(newProfileBox, true);
+  if (configStatus) configStatus.textContent = `当前配置：${currentProfileName}`;
 });
 deleteProfileBtn?.addEventListener('click', async () => {
   if (!currentProfileName || currentProfileName === 'default') return;
