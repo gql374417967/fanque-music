@@ -133,7 +133,10 @@
           <div class="steps" id="steps"></div>
           <div class="error hidden" id="errorBox"></div>
           <div class="resultGrid" id="resultGrid"></div>
-          <pre class="lyrics hidden" id="lyricsBox"></pre>
+          <div class="lyricsEditor hidden" id="lyricsEditor">
+            <textarea id="lyricsBox" aria-label="编辑歌词"></textarea>
+            <div class="editorActions"><button type="button" class="secondary" id="saveLyricsBtn">保存歌词并确认</button></div>
+          </div>
         </section>
       </section>
     </main>

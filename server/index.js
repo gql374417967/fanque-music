@@ -1,3 +1,4 @@
+import fs from 'node:fs/promises';
 import 'dotenv/config';
 import express from 'express';
 import cors from 'cors';
@@ -6,7 +7,7 @@ import path from 'node:path';
 import { z } from 'zod';
 import { ensureStorage, rootDir, uploadsDir } from './lib/paths.js';
 import { createRuntimeProfile, deleteRuntimeProfile, diagnoseRuntimeConfig, getRuntimeConfig, listRuntimeProfiles, publicConfig, saveRuntimeConfig } from './lib/config.js';
-import { createWorkflow, getRun, listRuns, runWorkflowStep, stopWorkflow } from './workflow.js';
+import { createWorkflow, getRun, listRuns, replaceCover, runWorkflowStep, saveLyrics, stopWorkflow } from './workflow.js';
 
 const app = express();
 const upload = multer({ dest: uploadsDir });
@@ -87,6 +88,28 @@ app.post('/api/workflows', upload.single('referenceAudio'), async (req, res) => 
   if (!parsed.success) return res.status(400).json({ error: parsed.error.flatten() });
   const run = await createWorkflow({ ...parsed.data, referenceAudioPath: req.file?.path });
   res.status(201).json(run);
+});
+
+app.post('/api/workflows/:id/lyrics', async (req, res, next) => {
+  try {
+    const run = await saveLyrics(req.params.id, req.body?.lyrics);
+    if (!run) return res.status(404).json({ error: 'run not found' });
+    res.json(run);
+  } catch (error) {
+    next(error);
+  }
+});
+
+app.post('/api/workflows/:id/cover', upload.single('cover'), async (req, res, next) => {
+  try {
+    const run = await replaceCover(req.params.id, req.file?.path);
+    if (!run) return res.status(404).json({ error: 'run not found' });
+    res.json(run);
+  } catch (error) {
+    next(error);
+  } finally {
+    if (req.file?.path) await fs.rm(req.file.path, { force: true }).catch(() => {});
+  }
 });
 
 app.post('/api/workflows/:id/steps/:stepId/run', async (req, res, next) => {

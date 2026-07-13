@@ -98,6 +98,42 @@ export function getRun(id) {
   return run ? publicRun(run) : undefined;
 }
 
+export async function saveLyrics(id, lyrics) {
+  const run = runs.get(id);
+  if (!run) return undefined;
+  const text = String(lyrics || '').trim();
+  if (!text) throw new Error('歌词不能为空');
+  if (run.status === 'running') throw new Error('任务正在执行，请稍后再编辑');
+  const files = pathsFor(run);
+  await fs.mkdir(files.dir, { recursive: true });
+  run.lyrics = text;
+  await fs.writeFile(files.lyricsPath, text, 'utf8');
+  resetFrom(run, 'music');
+  setStep(run, 'lyrics', 'done', '歌词已保存确认，可生成音乐');
+  run.status = 'waiting';
+  run.error = undefined;
+  touch(run);
+  return publicRun(run);
+}
+
+export async function replaceCover(id, sourcePath) {
+  const run = runs.get(id);
+  if (!run) return undefined;
+  if (run.status === 'running') throw new Error('任务正在执行，请稍后再替换封面');
+  if (!sourcePath) throw new Error('请选择封面图片');
+  const files = pathsFor(run);
+  await fs.mkdir(files.dir, { recursive: true });
+  await fs.copyFile(sourcePath, files.rawCoverPath);
+  run.rawCoverPath = files.rawCoverPath;
+  run.coverPath = undefined;
+  resetFrom(run, 'postCover');
+  setStep(run, 'cover', 'done', '封面已替换确认，可继续后处理');
+  run.status = 'waiting';
+  run.error = undefined;
+  touch(run);
+  return publicRun(run);
+}
+
 export async function createWorkflow(input) {
   const id = nanoid(10);
   const now = new Date().toISOString();

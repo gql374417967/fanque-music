@@ -13,6 +13,10 @@ const steps = document.querySelector('#steps');
 const errorBox = document.querySelector('#errorBox');
 const resultGrid = document.querySelector('#resultGrid');
 const lyricsBox = document.querySelector('#lyricsBox');
+const lyricsEditor = document.querySelector('#lyricsEditor');
+const saveLyricsBtn = document.querySelector('#saveLyricsBtn');
+const coverReplaceInput = document.querySelector('#coverReplaceInput');
+const replaceCoverBtn = document.querySelector('#replaceCoverBtn');
 const packageLink = document.querySelector('#packageLink');
 const resultPanel = document.querySelector('#resultPanel');
 const configStatus = document.querySelector('#configStatus');
@@ -268,6 +272,22 @@ function renderSteps(run) {
       actions.append(stopBtn);
     }
 
+    if (step.id === 'cover' && ['done', 'skipped'].includes(step.status)) {
+      const coverInput = document.createElement('input');
+      coverInput.type = 'file';
+      coverInput.accept = 'image/*';
+      coverInput.id = 'coverReplaceInput';
+      coverInput.className = 'hidden';
+      coverInput.addEventListener('change', () => replaceCover(coverInput.files?.[0]));
+      const replaceBtn = document.createElement('button');
+      replaceBtn.type = 'button';
+      replaceBtn.className = 'secondary';
+      replaceBtn.id = 'replaceCoverBtn';
+      replaceBtn.textContent = '替换封面';
+      replaceBtn.addEventListener('click', () => coverInput.click());
+      actions.append(replaceBtn, coverInput);
+    }
+
     card.append(top, detail, actions);
     steps.append(card);
   });
@@ -308,15 +328,15 @@ function scheduleAutoAdvance(run) {
 function renderResults(run) {
   resultGrid.innerHTML = '';
   setHidden(packageLink, true);
-  setHidden(lyricsBox, !run?.lyrics);
+  setHidden(lyricsEditor, !run?.lyrics);
   if (!run) return;
 
-  if (run.lyrics) lyricsBox.textContent = run.lyrics;
+  if (run.lyrics) lyricsBox.value = run.lyrics;
   const items = [];
+  if (run.coverUrl) items.push(['封面', `<img class="cover" src="${run.coverUrl}" alt="封面" />`]);
   if (run.input?.title) items.push(['歌名', run.input.title]);
   if (run.input?.theme) items.push(['主题', run.input.theme]);
   if (run.audioUrl) items.push(['MP3', `<audio controls src="${run.audioUrl}"></audio>`]);
-  if (run.coverUrl) items.push(['封面', `<img class="cover" src="${run.coverUrl}" alt="封面" />`]);
   if (run.publishResult) items.push(['上架结果', `<pre>${JSON.stringify(run.publishResult, null, 2)}</pre>`]);
 
   for (const [label, value] of items) {
@@ -368,6 +388,39 @@ function stopPolling() {
   pollTimer = null;
 }
 
+async function saveEditedLyrics() {
+  if (!currentRun?.id || !lyricsBox) return;
+  saveLyricsBtn.disabled = true;
+  saveLyricsBtn.textContent = '保存中';
+  try {
+    const run = await requestJson(`/api/workflows/${currentRun.id}/lyrics`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ lyrics: lyricsBox.value })
+    });
+    renderRun(run);
+  } catch (error) {
+    showError(error.message);
+  } finally {
+    saveLyricsBtn.disabled = false;
+    saveLyricsBtn.textContent = '保存歌词并确认';
+  }
+}
+
+async function replaceCover(file) {
+  if (!file || !currentRun?.id) return;
+  const data = new FormData();
+  data.append('cover', file);
+  try {
+    const run = await requestJson(`/api/workflows/${currentRun.id}/cover`, { method: 'POST', body: data });
+    renderRun(run);
+  } catch (error) {
+    showError(error.message);
+  } finally {
+    if (coverReplaceInput) coverReplaceInput.value = '';
+  }
+}
+
 async function runStep(stepId, regenerate = false) {
   if (!currentRun?.id) return;
   showError('');
@@ -397,6 +450,8 @@ async function stopRun() {
     showError(error.message);
   }
 }
+
+saveLyricsBtn?.addEventListener('click', saveEditedLyrics);
 
 async function checkHealth() {
   try {
